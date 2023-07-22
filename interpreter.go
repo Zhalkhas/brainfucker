@@ -3,101 +3,106 @@ package brainfucker
 import (
 	"bufio"
 	"fmt"
+	"github.com/pkg/errors"
 	"io"
 )
 
 type Interpreter struct {
-	input        []rune
-	currInputPos int
-	dataCells    []byte
-	currCellPos  int
-	loopStart    int
-	progInput    io.Reader
-	progOutput   io.Writer
+	input      *bufio.Reader
+	buf        Buffer
+	progInput  io.ByteReader
+	progOutput io.ByteWriter
 }
 
-func NewInterpreter(input io.Reader, output io.Writer, dataCellsBufferSize ...int) *Interpreter {
+func NewInterpreter(
+	input *bufio.Reader,
+	progInput io.ByteReader,
+	progOutput io.ByteWriter,
+	dataCellsBufferSize ...int,
+) *Interpreter {
 	bufSize := 30000
 	if len(dataCellsBufferSize) != 0 {
 		bufSize = dataCellsBufferSize[0]
 	}
-	dataCells := make([]byte, bufSize)
-	return &Interpreter{dataCells: dataCells, currCellPos: 0, currInputPos: 0, progInput: input, progOutput: output}
-}
-
-func (i *Interpreter) Reset() {
-	i.input = make([]rune, 0)
-	i.currInputPos = 0
-	i.dataCells = make([]byte, len(i.dataCells))
-	i.currCellPos = 0
-	i.loopStart = 0
-}
-
-func (i *Interpreter) readInput(reader io.Reader) error {
-	s := bufio.NewReader(reader)
-	input, err := s.ReadString(0)
-	if err != nil && err != io.EOF {
-		return err
+	return &Interpreter{
+		input:      input,
+		buf:        NewBuffer(bufSize),
+		progInput:  progInput,
+		progOutput: progOutput,
 	}
-	i.input = []rune(input)
-	return nil
 }
 
-func (i *Interpreter) currentRune() (rune, error) {
-	if i.currInputPos >= len(i.input) {
-		return 0, io.EOF
-	}
-	return i.input[i.currInputPos], nil
+func (i *Interpreter) buffer() []byte {
+	return i.buf.raw()
 }
 
-func (i *Interpreter) currentCell() byte {
-	if i.currCellPos < 0 {
-		i.currCellPos = 0
-	}
-	return i.dataCells[i.currCellPos]
-}
-
-func (i *Interpreter) Run(input io.Reader) error {
-	err := i.readInput(input)
+func (i *Interpreter) currentSymbol() (byte, error) {
+	b, err := i.input.ReadByte()
 	if err != nil {
-		return err
+		return 0, fmt.Errorf("error reading program: %w\n", err)
 	}
+	return b, nil
+}
 
-	for i.currInputPos < len(i.input) {
-		curr, err := i.currentRune()
-		if err == io.EOF {
-			break
-		}
+func (i *Interpreter) peekCurrentSymbol() (byte, error) {
+	b, err := i.input.Peek(1)
+	if err != nil {
+		return 0, err
+	}
+	return b[0], nil
+
+}
+
+func (i *Interpreter) currentCell() (byte, error) {
+	return i.buf.Current()
+}
+
+func (i *Interpreter) Run() error {
+	var curr byte
+	var err error
+
+	for curr, err = i.currentSymbol(); err == nil; curr, err = i.currentSymbol() {
 		switch curr {
 		case IncrementData:
-			i.dataCells[i.currCellPos]++
-			break
+			if err := i.buf.IncrementCurrent(); err != nil {
+				return err
+			}
 		case DecrementData:
-			i.dataCells[i.currCellPos]--
-			break
+			if err := i.buf.DecrementCurrent(); err != nil {
+				return err
+			}
 		case IncrementPointer:
-			i.currCellPos++
-			break
+			if err := i.buf.GoRight(); err != nil {
+				return err
+			}
 		case DecrementPointer:
-			i.currCellPos--
-			break
+			if err := i.buf.GoLeft(); err != nil {
+				return err
+			}
 		case OutputData:
-			_, err := i.progOutput.Write([]byte{i.currentCell()})
+			curr, err := i.buf.Current()
 			if err != nil {
 				return err
 			}
-			break
+			if err := i.progOutput.WriteByte(curr); err != nil {
+				return fmt.Errorf("error writing program output: %w\n", err)
+			}
 		case InputData:
-			_, err := fmt.Fscanf(i.progInput, "%c", &i.dataCells[i.currCellPos])
+			b, err := i.progInput.ReadByte()
+			if err != nil {
+				return fmt.Errorf("error reading program input: %w\n", err)
+			}
+			if err := i.buf.WriteCurrent(b); err != nil {
+				return err
+			}
+		case StartLoop:
+			curr, err := i.currentCell()
 			if err != nil {
 				return err
 			}
-			break
-		case StartLoop:
-			if i.currentCell() == 0 {
+			if curr == 0 {
 				for {
-					i.currInputPos++
-					curr, err := i.currentRune()
+					curr, err := i.currentSymbol()
 					if err != nil {
 						return err
 					}
@@ -105,19 +110,30 @@ func (i *Interpreter) Run(input io.Reader) error {
 						break
 					}
 				}
-			} else {
-				i.loopStart = i.currInputPos
 			}
-			break
 		case EndLoop:
-			if i.currentCell() != 0 {
-				i.currInputPos = i.loopStart
-			} else {
-				i.loopStart = 0
+			curr, err := i.currentCell()
+			if err != nil {
+				return err
 			}
-			break
+			if curr != 0 {
+				var s byte
+				var err error
+				for s, err = i.peekCurrentSymbol(); err == nil && s != StartLoop; s, err = i.peekCurrentSymbol() {
+					if err := i.input.UnreadByte(); err != nil {
+						return err
+					}
+				}
+				if err != nil {
+					return err
+				}
+			}
+
 		}
-		i.currInputPos++
 	}
-	return nil
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+
+	return err
 }

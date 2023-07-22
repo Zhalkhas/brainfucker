@@ -1,118 +1,89 @@
 package brainfucker
 
 import (
+	"bufio"
 	"bytes"
-	"fmt"
-	"os"
 	"strings"
 	"testing"
 )
 
-func TestRunInterpreter(t *testing.T) {
-	t.Run("basic brainfuck program", func(t *testing.T) {
-		progInput := ""
-		prog := "++>++>+++<-"
-		i := NewInterpreter(strings.NewReader(progInput), os.Stdout)
-		err := i.Run(strings.NewReader(prog))
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		assertCells([]byte{2, 1, 3}, i.dataCells, t)
-	})
+type testInput struct {
+	progInput          string
+	program            string
+	progOutputExpected string
+	dataCellsExpected  []byte
+}
 
-	t.Run("test program output", func(t *testing.T) {
-		progInput := ""
-		prog := "+++++.>++.>+++."
-		expected := []byte{5}
-		bytesWriter := bytes.NewBuffer([]byte{})
-		i := NewInterpreter(strings.NewReader(progInput), bytesWriter)
-		err := i.Run(strings.NewReader(prog))
-		if err != nil {
-			t.Errorf("%+v\n", err)
-			return
-		}
+func testWithInput(t *testing.T, testData testInput) {
+	out := bytes.NewBuffer([]byte{})
+	i := NewInterpreter(bufio.NewReader(strings.NewReader(testData.program)), strings.NewReader(testData.progInput), out)
+	if err := i.Run(); err != nil {
+		t.Errorf("error running interpreter: %+v\n", err)
+		return
+	}
 
-		bytesBuf := make([]byte, len(expected))
-		_, err = bytesWriter.Read(bytesBuf)
-		if err != nil {
-			t.Errorf("%+v\n", err)
-			return
-		}
+	if testData.dataCellsExpected != nil {
+		assertCells(testData.dataCellsExpected, i.buffer(), t)
+	}
 
-		assertCells(expected, i.dataCells, t)
-		assertCells(expected, bytesBuf, t)
-	})
-
-	t.Run("multiple values output test", func(t *testing.T) {
-		progInput := ""
-		prog := "+++++.>++.>+++."
-		expected := []byte{5, 2, 3}
-		bytesWriter := bytes.NewBuffer([]byte{})
-		i := NewInterpreter(strings.NewReader(progInput), bytesWriter)
-		err := i.Run(strings.NewReader(prog))
-		if err != nil {
-			t.Errorf("%+v\n", err)
-			return
-		}
-
-		bytesBuf := make([]byte, len(expected))
-		_, err = bytesWriter.Read(bytesBuf)
-		if err != nil {
-			t.Errorf("%+v\n", err)
-			return
-		}
-
-		assertCells(expected, i.dataCells, t)
-		assertCells(expected, bytesBuf, t)
-	})
-
-	t.Run("test program input", func(t *testing.T) {
-		progInput := ""
-		prog := ",++"
-		expected := "5"
-		bytesWriter := bytes.NewBufferString("")
-		i := NewInterpreter(strings.NewReader(progInput), bytesWriter)
-		err := i.Run(strings.NewReader(prog))
-		if err != nil {
-			t.Errorf("%+v\n", err)
-			return
-		}
-		assertCells([]byte{5}, i.dataCells, t)
-		bytesBuf := make([]byte, 1)
-		_, err = bytesWriter.Read(bytesBuf)
-		if err != nil {
-			t.Error(err)
-		}
-		actual := string(bytesBuf)
-		if actual != fmt.Sprint(expected) {
-			t.Errorf("error: values does not match, expected %+v, actual %+v", expected, actual)
-		}
-	})
-
-	t.Run("hello world brainfuck program", func(t *testing.T) {
-		progInput := ""
-		prog := ">++++++++[<+++++++++>-]<.>++++[<+++++++>-]<+.+++++++..+++.>>++++++[<+++++++>-]<++.------------.>++++++[<+++++++++>-]<+.<.+++.------.--------.>>>++++[<++++++++>-]<+."
-		buffWriter := bytes.NewBufferString("")
-		i := NewInterpreter(strings.NewReader(progInput), buffWriter)
-		err := i.Run(strings.NewReader(prog))
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		expected := "Hello, World!"
-		actual := buffWriter.String()
-		if actual != expected {
-			t.Errorf("error: values does not match, expected %+v, actual %+v", expected, actual)
-		}
-	})
+	actual := string(out.Bytes())
+	if actual != testData.progOutputExpected {
+		t.Errorf("error: program output values does not match, expected %+v, actual %+v", testData.progOutputExpected, actual)
+	}
 }
 
 func assertCells(expected, actual []byte, t *testing.T) {
 	for i := range expected {
 		if expected[i] != actual[i] {
-			t.Errorf("error: values does not match, expected %+v, actual %+v", expected, actual[:len(expected)])
+			t.Errorf("error: interpreter data state does not match, expected %+v, actual %+v", expected, actual[:len(expected)])
 			return
 		}
 	}
+}
+
+func TestRunInterpreter(t *testing.T) {
+	t.Run("basic brainfuck program", func(t *testing.T) {
+		testWithInput(t, testInput{
+			progInput:          "",
+			program:            "++>++>+++<-",
+			progOutputExpected: "",
+			dataCellsExpected:  []byte{2, 1, 3},
+		})
+	})
+
+	t.Run("test program output", func(t *testing.T) {
+		testWithInput(t, testInput{
+			progInput:          "",
+			program:            "+++++.>++.>+++.",
+			progOutputExpected: string([]byte{5, 2, 3}),
+			dataCellsExpected:  []byte{5, 2, 3},
+		})
+	})
+
+	t.Run("multiple values output test", func(t *testing.T) {
+		testWithInput(t, testInput{
+			progInput:          "",
+			program:            "+++++.>++.>+++.",
+			progOutputExpected: string([]byte{5, 2, 3}),
+			dataCellsExpected:  []byte{5, 2, 3},
+		})
+	})
+
+	t.Run("test program input", func(t *testing.T) {
+		testWithInput(t, testInput{
+			progInput:          "3",
+			program:            ",++",
+			progOutputExpected: "",
+			dataCellsExpected:  []byte{"5"[0]},
+		})
+	})
+
+	t.Run("hello world brainfuck program", func(t *testing.T) {
+		testWithInput(t, testInput{
+			progInput:          "",
+			program:            ">++++++++[<+++++++++>-]<.>++++[<+++++++>-]<+.+++++++..+++.>>++++++[<+++++++>-]<++.------------.>++++++[<+++++++++>-]<+.<.+++.------.--------.>>>++++[<++++++++>-]<+.",
+			progOutputExpected: "Hello, World!",
+			dataCellsExpected:  nil,
+		})
+	})
 }
