@@ -45,6 +45,7 @@ func (c Compiler) Compile(program ast.Program) (*ir.Module, error) {
 func (c Compiler) handleCommand(command ast.Command) error {
 	switch command.Token() {
 	case lexer.Increment:
+
 	}
 	return nil
 }

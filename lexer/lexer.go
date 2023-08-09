@@ -6,7 +6,7 @@ import (
 )
 
 type Lexer interface {
-	Lex() <-chan TokenResult
+	Lex() ([]Token, error)
 }
 
 type ByteLexer struct {
@@ -17,24 +17,20 @@ func NewLexer(input io.RuneReader) ByteLexer {
 	return ByteLexer{input: input}
 }
 
-func (b ByteLexer) Lex() <-chan TokenResult {
-	out := make(chan TokenResult)
-	go func() {
-		defer close(out)
-		for {
-			r, _, err := b.input.ReadRune()
-			if err != nil {
-				if !errors.Is(err, io.EOF) {
-					out <- NewTokenResultError(err)
-				}
-				return
+func (b ByteLexer) Lex() ([]Token, error) {
+	out := make([]Token, 0)
+	for {
+		r, _, err := b.input.ReadRune()
+		if err != nil {
+			if !errors.Is(err, io.EOF) {
+				return out, err
 			}
-
-			token := NewToken(r)
-			if token != NilToken {
-				out <- NewTokenResultValue(token)
-			}
+			return out, nil
 		}
-	}()
-	return out
+		token := NewToken(r)
+		if token != NilToken {
+			out = append(out, token)
+		}
+	}
+
 }

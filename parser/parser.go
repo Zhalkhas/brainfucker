@@ -3,11 +3,11 @@ package parser
 import (
 	"brainfucker/ast"
 	"brainfucker/lexer"
+	"errors"
 	"fmt"
-	"log"
 )
 
-var ErrInvalidLoop = fmt.Errorf("invalid loop parens")
+var ErrInvalidLoop = errors.New("invalid loop parens")
 
 type Parser struct {
 	lexer lexer.Lexer
@@ -19,101 +19,50 @@ func NewParser(lexer lexer.Lexer) Parser {
 
 func (p *Parser) Parse() (*ast.Program, error) {
 	program := ast.Program{Nodes: []ast.Node{}}
-	log.Println("starting parser")
-	for {
-		result, ok := <-p.lexer.Lex()
-		log.Println("receiving token", result)
-		if !ok {
-			log.Println("cannot read from chan")
-		}
-		if err := result.Error(); err != nil {
-			return nil, err
-		}
-
-		token := result.Token()
-		if token == lexer.NilToken {
-			return nil, fmt.Errorf("invalid token result from lexer: both token and error are nil")
-		}
-
-		log.Println("token in parser", token)
+	tokens, err := p.lexer.Lex()
+	if err != nil {
+		return &program, fmt.Errorf("error in lexing program: %w", err)
+	}
+	currTokenIndex := 0
+	for currTokenIndex < len(tokens) {
+		token := tokens[currTokenIndex]
 		switch token {
 		case lexer.JumpIfZero:
-			for i := 0; i < 10; i++ {
-				fmt.Println("prikol", <-p.lexer.Lex())
-			}
-			fmt.Println("prikol", <-p.lexer.Lex())
-			loop, err := p.parseLoop()
+			var loop ast.Loop
+			var err error
+			loop, currTokenIndex, err = p.parseLoop(tokens, currTokenIndex+1)
 			if err != nil {
 				return nil, err
 			}
 			program.Nodes = append(program.Nodes, loop)
 		default:
 			program.Nodes = append(program.Nodes, ast.NewCommand(token))
+			currTokenIndex++
 		}
 	}
 	return &program, nil
 }
 
-var parseLoopCalls = 0
-
-func (p *Parser) parseLoop() (ast.Loop, error) {
-	parseLoopCalls++
-	fmt.Println("parseLoopCalls", parseLoopCalls)
+func (p *Parser) parseLoop(tokens []lexer.Token, currTokenIdx int) (ast.Loop, int, error) {
 	l := ast.Loop{}
-	for result := range p.lexer.Lex() {
-		if err := result.Error(); err != nil {
-			return ast.Loop{}, err
-		}
-
-		token := result.Token()
-		if token == lexer.NilToken {
-			return ast.Loop{}, fmt.Errorf("invalid token result from lexer: both token and error are nil")
-		}
-
-		log.Println("token in parseLoop", token)
+	for currTokenIdx < len(tokens) {
+		token := tokens[currTokenIdx]
 		switch token {
 		case lexer.JumpIfZero:
-			loop, err := p.parseLoop()
+			var loop ast.Loop
+			var err error
+			loop, currTokenIdx, err = p.parseLoop(tokens, currTokenIdx+1)
 			if err != nil {
-				return ast.Loop{}, fmt.Errorf("error parsing nested loop: %w", err)
+				return l, currTokenIdx, fmt.Errorf("error parsing nested loop: %w", err)
 
 			}
 			l.Statements = append(l.Statements, loop)
 		case lexer.JumpUnlessZero:
-			if len(l.Statements) == 0 {
-				return ast.Loop{}, nil
-			}
-			return l, nil
+			return l, currTokenIdx + 1, nil
 		default:
 			l.Statements = append(l.Statements, ast.NewCommand(token))
+			currTokenIdx++
 		}
 	}
-	return ast.Loop{}, ErrInvalidLoop
-}
-
-type tokenStack []ast.Node
-
-func newTokenStack() tokenStack {
-	return tokenStack{}
-}
-
-func (s *tokenStack) Push(val ast.Node) {
-	*s = append(*s, val)
-}
-func (s *tokenStack) Pop() ast.Node {
-	l := len(*s)
-	if l > 0 {
-		last := (*s)[l-1]
-		*s = (*s)[:l-1]
-		return last
-	}
-	return nil
-}
-
-func (s *tokenStack) Peek() ast.Node {
-	l := len(*s)
-	if l > 0 {
-		return (*s)[l-1]
-	}
-	return nil
+	return ast.Loop{}, currTokenIdx, ErrInvalidLoop
 }

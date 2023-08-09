@@ -8,13 +8,14 @@ import (
 )
 
 type parserTestInput struct {
-	input         []lexer.TokenResult
+	input         []lexer.Token
 	output        *ast.Program
 	expectedError error
 }
 
 type stubLexer struct {
-	res []lexer.TokenResult
+	res       []lexer.Token
+	stubError error
 }
 
 func testParserWithInput(t *testing.T, testData parserTestInput) {
@@ -29,28 +30,20 @@ func testParserWithInput(t *testing.T, testData parserTestInput) {
 
 	}
 }
-func (s stubLexer) Lex() <-chan lexer.TokenResult {
-	res := make(chan lexer.TokenResult)
-	go func() {
-		defer close(res)
-		for i := 0; i < len(s.res); i++ {
-			res <- s.res[i]
-		}
-	}()
-	return res
+func (s stubLexer) Lex() ([]lexer.Token, error) {
+	return s.res, s.stubError
 
 }
 
 func TestParser(t *testing.T) {
 	t.Run("basic program parse", func(t *testing.T) {
 		testParserWithInput(t, parserTestInput{
-			input: []lexer.TokenResult{
-				lexer.NewTokenResultValue(lexer.Increment),
-				lexer.NewTokenResultValue(lexer.Decrement),
-				lexer.NewTokenResultValue(lexer.MoveRight),
-				lexer.NewTokenResultValue(lexer.MoveLeft),
-				lexer.NewTokenResultValue(lexer.Read),
-				lexer.NewTokenResultValue(lexer.Write),
+			input: []lexer.Token{lexer.Increment,
+				lexer.Decrement,
+				lexer.MoveRight,
+				lexer.MoveLeft,
+				lexer.Read,
+				lexer.Write,
 			},
 			output: &ast.Program{Nodes: []ast.Node{
 				ast.NewCommand(lexer.Increment),
@@ -66,15 +59,15 @@ func TestParser(t *testing.T) {
 
 	t.Run("parsing loops", func(t *testing.T) {
 		testParserWithInput(t, parserTestInput{
-			input: []lexer.TokenResult{
-				lexer.NewTokenResultValue(lexer.JumpIfZero),
-				lexer.NewTokenResultValue(lexer.Increment),
-				lexer.NewTokenResultValue(lexer.Decrement),
-				lexer.NewTokenResultValue(lexer.MoveRight),
-				lexer.NewTokenResultValue(lexer.MoveLeft),
-				lexer.NewTokenResultValue(lexer.Read),
-				lexer.NewTokenResultValue(lexer.Write),
-				lexer.NewTokenResultValue(lexer.JumpUnlessZero),
+			input: []lexer.Token{
+				lexer.JumpIfZero,
+				lexer.Increment,
+				lexer.Decrement,
+				lexer.MoveRight,
+				lexer.MoveLeft,
+				lexer.Read,
+				lexer.Write,
+				lexer.JumpUnlessZero,
 			},
 			output: &ast.Program{Nodes: []ast.Node{ast.Loop{Statements: []ast.Node{
 				ast.NewCommand(lexer.Increment),
@@ -90,12 +83,12 @@ func TestParser(t *testing.T) {
 
 	t.Run("parsing inner loops", func(t *testing.T) {
 		testParserWithInput(t, parserTestInput{
-			input: []lexer.TokenResult{
-				lexer.NewTokenResultValue(lexer.JumpIfZero),
-				lexer.NewTokenResultValue(lexer.JumpIfZero),
-				lexer.NewTokenResultValue(lexer.Decrement),
-				lexer.NewTokenResultValue(lexer.JumpUnlessZero),
-				lexer.NewTokenResultValue(lexer.JumpUnlessZero),
+			input: []lexer.Token{
+				lexer.JumpIfZero,
+				lexer.JumpIfZero,
+				lexer.Decrement,
+				lexer.JumpUnlessZero,
+				lexer.JumpUnlessZero,
 			},
 			output: &ast.Program{Nodes: []ast.Node{
 				ast.Loop{Statements: []ast.Node{

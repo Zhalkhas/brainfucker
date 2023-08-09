@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"log"
 )
 
 type Interpreter struct {
@@ -61,6 +62,7 @@ func (i Interpreter) evalCommand(tape *Tape, cmd ast.Command) error {
 		}
 		tape.WriteCurr(b)
 	case lexer.Write:
+		log.Println("writing", string([]byte{tape.Curr()}))
 		if err := i.output.WriteByte(tape.Curr()); err != nil {
 			return fmt.Errorf("error writing to output: %w\n", err)
 		}

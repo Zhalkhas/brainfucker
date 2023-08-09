@@ -9,22 +9,19 @@ import (
 	"testing"
 )
 
-func collectChan(ch <-chan TokenResult) []TokenResult {
-	res := make([]TokenResult, 0)
-	for tr := range ch {
-		res = append(res, tr)
-	}
-	return res
-}
-
 type lexerTestInput struct {
-	input  string
-	output []TokenResult
+	input         string
+	output        []Token
+	exceptedError error
 }
 
 func testLexerWithInput(t *testing.T, testData lexerTestInput) {
 	l := NewLexer(bytes.NewBuffer([]byte(testData.input)))
-	actual := collectChan(l.Lex())
+	actual, actualErr := l.Lex()
+	if actualErr != testData.exceptedError {
+		t.Errorf("unexpected error: %v", actualErr)
+		return
+	}
 	if !reflect.DeepEqual(testData.output, actual) {
 		t.Errorf("expected %v, got %v", testData.output, actual)
 	}
@@ -34,14 +31,14 @@ func TestLexer(t *testing.T) {
 	t.Run("empty input", func(t *testing.T) {
 		testLexerWithInput(t, lexerTestInput{
 			input:  "",
-			output: []TokenResult{},
+			output: []Token{},
 		})
 	})
 
 	t.Run("valid input", func(t *testing.T) {
 		testLexerWithInput(t, lexerTestInput{
 			input:  "+-<>.,[]",
-			output: []TokenResult{NewTokenResultValue(Increment), NewTokenResultValue(Decrement), NewTokenResultValue(MoveLeft), NewTokenResultValue(MoveRight), NewTokenResultValue(Write), NewTokenResultValue(Read), NewTokenResultValue(JumpIfZero), NewTokenResultValue(JumpUnlessZero)},
+			output: []Token{Increment, Decrement, MoveLeft, MoveRight, Write, Read, JumpIfZero, JumpUnlessZero},
 		})
 	})
 
@@ -60,7 +57,7 @@ func TestLexer(t *testing.T) {
 		// passing new generated input to lexer
 		testLexerWithInput(t, lexerTestInput{
 			input:  string(input),
-			output: []TokenResult{NewTokenResultValue(Increment), NewTokenResultValue(Decrement), NewTokenResultValue(MoveLeft), NewTokenResultValue(MoveRight), NewTokenResultValue(Write), NewTokenResultValue(Read), NewTokenResultValue(JumpIfZero), NewTokenResultValue(JumpUnlessZero)},
+			output: []Token{Increment, Decrement, MoveLeft, MoveRight, Write, Read, JumpIfZero, JumpUnlessZero},
 		})
 	})
 
@@ -68,8 +65,12 @@ func TestLexer(t *testing.T) {
 		l := NewLexer(stubRuneReader{runeReaderFunc: func() (r rune, size int, err error) {
 			return 0, 0, io.EOF
 		}})
-		expected := make([]TokenResult, 0)
-		actual := collectChan(l.Lex())
+		expected := make([]Token, 0)
+		actual, actualError := l.Lex()
+		if actualError != nil {
+			t.Errorf("unexpected error: %v", actualError)
+			return
+		}
 		if !reflect.DeepEqual(expected, actual) {
 			t.Errorf("expected %v, got %v", expected, actual)
 		}
@@ -80,8 +81,12 @@ func TestLexer(t *testing.T) {
 		l := NewLexer(stubRuneReader{runeReaderFunc: func() (rune, int, error) {
 			return 0, 0, err
 		}})
-		expected := []TokenResult{NewTokenResultError(err)}
-		actual := collectChan(l.Lex())
+		expected := make([]Token, 0)
+		actual, actualErr := l.Lex()
+		if actualErr != err {
+			t.Errorf("unexpected error: %v", actualErr)
+			return
+		}
 		if !reflect.DeepEqual(expected, actual) {
 			t.Errorf("expected %v, got %v", expected, actual)
 		}
